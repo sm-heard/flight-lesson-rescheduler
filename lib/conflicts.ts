@@ -79,7 +79,7 @@ async function fetchCandidateBookings(
       trainingLevel: students.trainingLevel,
     })
     .from(bookings)
-    .innerJoin(students, (join) => join.on(eq(bookings.studentId, students.id)))
+    .innerJoin(students, eq(bookings.studentId, students.id))
     .where(
       and(
         inArray(bookings.status, ACTIVE_STATUSES),
