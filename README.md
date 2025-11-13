@@ -34,6 +34,7 @@ Monitor corridor weather, automatically cancel unsafe lessons, generate AI-ranke
 - `npm run db:migrate` – apply migrations to the database defined in `.env.local`.
 - `npm run seed` – reset and seed mock students, bookings, and weather fixtures.
 - `npm run lint` – run ESLint.
+- `npm run demo` – run the seed, trigger the weather monitor, and print quick links (`npm run demo -- --open` also opens the dashboard).
 
 ## Email Modes
 - Set `EMAIL_MODE=preview` to capture messages only in the outbox view.
@@ -47,6 +48,17 @@ curl -X POST http://localhost:3000/api/manual/check-weather
 This scans upcoming bookings, cancels unsafe ones, generates proposals, sends notifications, and refreshes dashboard data.
 
 ## Deploying
-- Deploy the Next.js app to Vercel.
-- Configure environment variables in Vercel’s dashboard.
-- Add a Vercel Cron job pointing to `/api/cron/check-weather` with header `x-cron-secret: <CRON_SECRET>`.
+- Deploy the Next.js app to Vercel (or your host of choice that supports Next.js 15).
+- Configure environment variables:
+  - `DATABASE_URL` (Neon/Prod Postgres connection string)
+  - `CRON_SECRET` (random string used to authenticate cron requests)
+  - `WEATHER_PROVIDER` (defaults to `mock`)
+  - `DEFAULT_TZ`
+  - `AI_ENABLED` / `OPENAI_API_KEY` (optional)
+  - `EMAIL_MODE`, `DEMO_EMAIL`, `RESEND_API_KEY`, `RESEND_FROM_EMAIL`
+  - `APP_BASE_URL` (e.g. `https://your-app.vercel.app`)
+- Add a Vercel Cron job hitting `POST https://your-app.vercel.app/api/cron/check-weather`
+  - Add header `x-cron-secret: <CRON_SECRET>`
+  - Recommended cadence: hourly
+- `npm run db:migrate` should run once on the Neon/production database before first deploy.
+- Optionally, call `/api/health` for uptime monitoring.
