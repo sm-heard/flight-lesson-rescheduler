@@ -1,5 +1,7 @@
 import { createHash } from "crypto";
 
+import "@/lib/env";
+
 import { and, eq, gte } from "drizzle-orm";
 import { DateTime } from "luxon";
 
@@ -30,7 +32,7 @@ type DispatchResult = {
 };
 
 function resolveMode(): NotificationMode {
-  const mode = process.env.EMAIL_MODE?.toLowerCase();
+  const mode = process.env.EMAIL_MODE?.trim().toLowerCase();
   if (
     mode === "send" &&
     process.env.RESEND_API_KEY &&

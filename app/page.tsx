@@ -1,103 +1,151 @@
-import Image from "next/image";
+import { DateTime } from "luxon";
 
-export default function Home() {
+import type { WeatherMonitorStats } from "@/lib/conflicts";
+import { triggerWeatherCheck } from "@/lib/actions/trigger-weather-check";
+import { getDashboardMetrics } from "@/lib/stats/metrics";
+import { getUpcomingBookings } from "@/lib/bookings/query";
+import { CheckWeatherForm } from "@/components/check-weather-form";
+
+type StatsState = {
+  stats: WeatherMonitorStats | null;
+  error?: string | null;
+};
+
+async function runCheck(_: StatsState, __: FormData): Promise<StatsState> {
+  "use server";
+
+  try {
+    const stats = await triggerWeatherCheck();
+    return { stats };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Unable to trigger weather monitor.";
+    return { stats: null, error: message };
+  }
+}
+
+function formatWindow(start: Date, end: Date, tz: string) {
+  const startDt = DateTime.fromJSDate(start).setZone(tz);
+  const endDt = DateTime.fromJSDate(end).setZone(tz);
+  return `${startDt.toFormat("EEE, MMM d h:mma")} – ${endDt.toFormat("h:mma z")}`;
+}
+
+function statusBadge(status: string) {
+  switch (status) {
+    case "scheduled":
+      return "bg-emerald-100 text-emerald-700";
+    case "conflict":
+      return "bg-amber-100 text-amber-700";
+    case "cancelled":
+      return "bg-red-100 text-red-700";
+    case "rescheduled":
+      return "bg-blue-100 text-blue-700";
+    default:
+      return "bg-slate-100 text-slate-600";
+  }
+}
+
+export default async function Home() {
+  const [metrics, bookings] = await Promise.all([
+    getDashboardMetrics(),
+    getUpcomingBookings(8),
+  ]);
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
-
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+    <section className="mx-auto flex max-w-6xl flex-col gap-8 px-6 py-8">
+      <div className="grid gap-4 md:grid-cols-4">
+        <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Bookings</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">{metrics.totalBookings}</p>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+        <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Weather conflicts</p>
+          <p className="mt-2 text-2xl font-semibold text-red-600">{metrics.conflictsDetected}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Reschedules confirmed</p>
+          <p className="mt-2 text-2xl font-semibold text-blue-600">{metrics.reschedulesConfirmed}</p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+          <p className="text-xs uppercase tracking-wide text-slate-500">Avg reschedule time</p>
+          <p className="mt-2 text-2xl font-semibold text-slate-900">
+            {metrics.averageRescheduleMinutes !== null ? `${metrics.averageRescheduleMinutes} min` : "—"}
+          </p>
+        </div>
+      </div>
+
+      <div className="rounded-xl border border-slate-200 bg-white px-6 py-6 shadow-sm">
+        <div className="space-y-2">
+          <h1 className="text-2xl font-semibold text-slate-900">Weather Monitor</h1>
+          <p className="text-sm text-slate-600">
+            Run the corridor weather scan on demand. Unsafe lessons auto-cancel, proposals regenerate, and notifications drop into the outbox.
+          </p>
+        </div>
+        <div className="mt-6">
+          <CheckWeatherForm action={runCheck} />
+        </div>
+      </div>
+
+      <div className="grid gap-4 text-sm text-slate-600 lg:grid-cols-[2fr_1fr]">
+        <div className="rounded-xl border border-slate-200 bg-white px-6 py-5 shadow-sm">
+          <div className="flex items-center justify-between">
+            <h2 className="text-sm font-semibold text-slate-700">Upcoming bookings</h2>
+            <span className="text-xs text-slate-500">Next 48 hours</span>
+          </div>
+          <div className="mt-4 overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="px-3 py-2">Student</th>
+                  <th className="px-3 py-2">Window</th>
+                  <th className="px-3 py-2">Status</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {bookings.length === 0 ? (
+                  <tr>
+                    <td colSpan={3} className="px-3 py-6 text-center text-slate-500">
+                      No upcoming bookings in the next 48 hours.
+                    </td>
+                  </tr>
+                ) : (
+                  bookings.map((booking) => (
+                    <tr key={booking.id}>
+                      <td className="px-3 py-2">
+                        <div className="flex flex-col">
+                          <span className="font-medium text-slate-900">{booking.studentName}</span>
+                          <span className="text-xs text-slate-500 capitalize">{booking.trainingLevel.replace("-", " ")}</span>
+                        </div>
+                      </td>
+                      <td className="px-3 py-2 text-slate-700">
+                        {formatWindow(booking.startTime, booking.endTime, booking.tz)}
+                      </td>
+                      <td className="px-3 py-2">
+                        <span className={`inline-flex rounded-full px-2 py-0.5 text-xs font-medium ${statusBadge(booking.status)}`}>
+                          {booking.status}
+                        </span>
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div className="space-y-4">
+          <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-700">Outbox</h2>
+            <p className="mt-2">
+              Track delivery results in <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">/notifications/outbox</code>. Entries include mode (preview vs send), provider IDs, and throttling reasons.
+            </p>
+          </div>
+          <div className="rounded-xl border border-slate-200 bg-white px-5 py-4 shadow-sm">
+            <h2 className="text-sm font-semibold text-slate-700">Environment Tips</h2>
+            <p className="mt-2">
+              Toggle email behaviour via <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">EMAIL_MODE</code>. Use <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">preview</code> for local demos and switch to <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">send</code> with <code className="rounded bg-slate-100 px-1 py-0.5 text-xs">DEMO_EMAIL</code> when testing Resend.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
   );
 }
