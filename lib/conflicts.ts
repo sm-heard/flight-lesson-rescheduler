@@ -3,6 +3,8 @@ import { DateTime } from "luxon";
 
 import { db } from "@/lib/db/client";
 import { evaluateSafety } from "@/lib/safety/rules";
+import { generateCandidateProposals, replaceProposals } from "@/lib/scheduling/proposals";
+import { dispatchNotification, buildBookingManageUrl } from "@/lib/notifications/service";
 import { getWeatherProvider } from "@/lib/weather";
 import type { Coordinates, WeatherPointCheck } from "@/lib/weather/types";
 import {
@@ -11,7 +13,7 @@ import {
   BookingStatus,
   events,
   students,
-  TrainingLevel,
+  Student,
   weatherChecks,
   WeatherLocation,
 } from "@/drizzle/schema";
@@ -22,7 +24,7 @@ const MAX_BATCH = 25;
 
 type CandidateBooking = {
   booking: Booking;
-  trainingLevel: TrainingLevel;
+  student: Student;
 };
 
 export type PointCheckResult = WeatherPointCheck & {
@@ -33,7 +35,7 @@ export type PointCheckResult = WeatherPointCheck & {
 
 export type BookingWeatherAssessment = {
   booking: Booking;
-  trainingLevel: TrainingLevel;
+  student: Student;
   safe: boolean;
   summary: string;
   failingPoint?: PointCheckResult;
@@ -65,6 +67,16 @@ function corridorPoints(booking: Booking): Array<{ location: WeatherLocation; co
   ];
 }
 
+function formatWindow(start: Date, end: Date, tz: string) {
+  const startDt = DateTime.fromJSDate(start).setZone(tz);
+  const endDt = DateTime.fromJSDate(end).setZone(tz);
+  return `${startDt.toFormat("EEE, MMM d h:mma")} – ${endDt.toFormat("h:mma z")}`;
+}
+
+function formatLessonWindow(booking: Booking) {
+  return formatWindow(booking.startTime, booking.endTime, booking.tz);
+}
+
 async function fetchCandidateBookings(
   options: ConflictMonitorOptions,
 ): Promise<CandidateBooking[]> {
@@ -76,7 +88,7 @@ async function fetchCandidateBookings(
   const rows = await db
     .select({
       booking: bookings,
-      trainingLevel: students.trainingLevel,
+      student: students,
     })
     .from(bookings)
     .innerJoin(students, eq(bookings.studentId, students.id))
@@ -92,7 +104,7 @@ async function fetchCandidateBookings(
 
   return rows.map((row) => ({
     booking: row.booking,
-    trainingLevel: row.trainingLevel,
+    student: row.student,
   }));
 }
 
@@ -117,7 +129,7 @@ async function evaluateBooking(
     }),
   );
 
-  const assessment = evaluateSafety(candidate.trainingLevel, weatherPoints);
+  const assessment = evaluateSafety(candidate.student.trainingLevel, weatherPoints);
 
   const pointsWithRules: PointCheckResult[] = assessment.points.map((result, index) => ({
     ...weatherPoints[index],
@@ -132,7 +144,7 @@ async function evaluateBooking(
 
   return {
     booking: candidate.booking,
-    trainingLevel: candidate.trainingLevel,
+    student: candidate.student,
     safe: assessment.safe,
     summary: assessment.summary,
     failingPoint,
@@ -158,7 +170,7 @@ async function recordWeatherChecks(result: BookingWeatherAssessment) {
   await db.insert(weatherChecks).values(payloads);
 }
 
-async function recordEvent(result: BookingWeatherAssessment) {
+async function recordWeatherEvent(result: BookingWeatherAssessment) {
   const eventType = result.safe ? "weather_check_passed" : "weather_conflict_detected";
   await db.insert(events).values({
     type: eventType,
@@ -176,19 +188,154 @@ async function recordEvent(result: BookingWeatherAssessment) {
   });
 }
 
+async function logEvent(
+  bookingId: string,
+  type: string,
+  details: Record<string, unknown>,
+) {
+  await db.insert(events).values({
+    type,
+    bookingId,
+    details,
+  });
+}
+
+async function fetchStudentBookings(studentId: string) {
+  return db
+    .select()
+    .from(bookings)
+    .where(eq(bookings.studentId, studentId));
+}
+
+type UnsafeHandlingResult = {
+  proposalsGenerated: number;
+  notificationsDispatched: number;
+};
+
+async function handleUnsafeAssessment(
+  assessment: BookingWeatherAssessment,
+): Promise<UnsafeHandlingResult> {
+  const { booking, student } = assessment;
+  const existing = await fetchStudentBookings(booking.studentId);
+  const proposals = await generateCandidateProposals(booking, student, existing);
+  await replaceProposals(booking.id, proposals);
+
+  if (booking.status !== "cancelled") {
+    await db
+      .update(bookings)
+      .set({ status: "cancelled", updatedAt: new Date() })
+      .where(eq(bookings.id, booking.id));
+
+    await logEvent(booking.id, "auto_cancelled", {
+      summary: assessment.summary,
+      failingPoint: assessment.failingPoint
+        ? {
+            location: assessment.failingPoint.location,
+            rule: assessment.failingPoint.rule,
+          }
+        : null,
+    });
+  }
+
+  await logEvent(booking.id, "proposals_created", {
+    count: proposals.length,
+    source: proposals.length > 0 ? proposals[0]?.source : null,
+  });
+
+  const lessonWindow = formatLessonWindow(booking);
+  const manageUrl = buildBookingManageUrl(booking.id);
+
+  let notificationsDispatched = 0;
+
+  const conflictResult = await dispatchNotification({
+    bookingId: booking.id,
+    toEmail: student.email,
+    kind: "conflict_detected",
+    template: {
+      kind: "conflict_detected",
+      studentName: student.name,
+      lessonWindow,
+      summary: assessment.summary,
+      manageUrl,
+    },
+  });
+  notificationsDispatched += 1;
+
+  await logEvent(booking.id, "notification_conflict", {
+    status: conflictResult.status,
+    reason: conflictResult.reason ?? null,
+  });
+
+  if (proposals.length > 0) {
+    const proposalsForEmail = proposals.map((proposal) => ({
+      label: formatWindow(proposal.start, proposal.end, booking.tz),
+      rationale: proposal.rationale,
+    }));
+
+    const proposalsResult = await dispatchNotification({
+      bookingId: booking.id,
+      toEmail: student.email,
+      kind: "proposals_ready",
+      template: {
+        kind: "proposals_ready",
+        studentName: student.name,
+        lessonWindow,
+        proposals: proposalsForEmail,
+        manageUrl,
+      },
+    });
+    notificationsDispatched += 1;
+
+    await logEvent(booking.id, "notification_proposals", {
+      status: proposalsResult.status,
+      reason: proposalsResult.reason ?? null,
+    });
+  }
+
+  return {
+    proposalsGenerated: proposals.length,
+    notificationsDispatched,
+  };
+}
+
+export type WeatherMonitorStats = {
+  total: number;
+  safe: number;
+  conflicts: number;
+  proposalsGenerated: number;
+  notificationsDispatched: number;
+};
+
 export async function runWeatherMonitor(
   options: ConflictMonitorOptions = {},
-): Promise<{ processed: BookingWeatherAssessment[] }> {
+): Promise<{ processed: BookingWeatherAssessment[]; stats: WeatherMonitorStats }> {
   const candidates = await fetchCandidateBookings(options);
 
   const results: BookingWeatherAssessment[] = [];
+  const stats: WeatherMonitorStats = {
+    total: candidates.length,
+    safe: 0,
+    conflicts: 0,
+    proposalsGenerated: 0,
+    notificationsDispatched: 0,
+  };
 
   for (const candidate of candidates) {
     const assessment = await evaluateBooking(candidate);
     results.push(assessment);
     await recordWeatherChecks(assessment);
-    await recordEvent(assessment);
+    await recordWeatherEvent(assessment);
+
+    if (assessment.safe) {
+      stats.safe += 1;
+      continue;
+    }
+
+    stats.conflicts += 1;
+    const outcome = await handleUnsafeAssessment(assessment);
+    stats.proposalsGenerated += outcome.proposalsGenerated;
+    stats.notificationsDispatched += outcome.notificationsDispatched;
   }
 
-  return { processed: results };
+  return { processed: results, stats };
 }
