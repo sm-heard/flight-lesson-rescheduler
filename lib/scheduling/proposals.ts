@@ -159,25 +159,23 @@ export async function replaceProposals(
   bookingId: string,
   proposals: CandidateProposal[],
 ) {
-  await db.transaction(async (tx) => {
-    await tx
-      .update(rescheduleProposals)
-      .set({ status: "expired" })
-      .where(and(eq(rescheduleProposals.bookingId, bookingId), eq(rescheduleProposals.status, "proposed")));
+  await db
+    .update(rescheduleProposals)
+    .set({ status: "expired" })
+    .where(and(eq(rescheduleProposals.bookingId, bookingId), eq(rescheduleProposals.status, "proposed")));
 
-    if (proposals.length === 0) {
-      return;
-    }
+  if (proposals.length === 0) {
+    return;
+  }
 
-    await tx.insert(rescheduleProposals).values(
-      proposals.map((proposal) => ({
-        bookingId,
-        startTime: proposal.start,
-        endTime: proposal.end,
-        rank: proposal.rank,
-        status: "proposed",
-        aiRationale: proposal.rationale,
-      })),
-    );
-  });
+  await db.insert(rescheduleProposals).values(
+    proposals.map((proposal) => ({
+      bookingId,
+      startTime: proposal.start,
+      endTime: proposal.end,
+      rank: proposal.rank,
+      status: "proposed",
+      aiRationale: proposal.rationale,
+    })),
+  );
 }

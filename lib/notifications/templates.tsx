@@ -4,7 +4,6 @@ import { render } from "@react-email/render";
 import { ConflictDetectedEmail } from "@/emails/ConflictDetected";
 import { ProposalsReadyEmail } from "@/emails/ProposalsReady";
 import { ProposalConfirmedEmail } from "@/emails/ProposalConfirmed";
-import type { NotificationKind } from "@/drizzle/schema";
 
 export type TemplateParams =
   | {
