@@ -7,7 +7,7 @@ function formatDate(value: Date | null) {
   if (!value) return "—";
   try {
     return new Date(value).toLocaleString();
-  } catch (error) {
+  } catch {
     return String(value);
   }
 }

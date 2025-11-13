@@ -14,15 +14,20 @@ type StatsState = {
   error?: string | null;
 };
 
-async function runCheck(_: StatsState, __: FormData): Promise<StatsState> {
+async function runCheck(prevState: StatsState, formData: FormData): Promise<StatsState> {
   "use server";
+
+  const previous = prevState ?? { stats: null, error: null };
+  if (formData.has("force")) {
+    // placeholder to satisfy lint for unused formData
+  }
 
   try {
     const stats = await triggerWeatherCheck();
     return { stats };
   } catch (error) {
     const message = error instanceof Error ? error.message : "Unable to trigger weather monitor.";
-    return { stats: null, error: message };
+    return { ...previous, error: message };
   }
 }
 

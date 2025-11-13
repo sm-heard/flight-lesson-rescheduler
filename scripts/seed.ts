@@ -75,7 +75,13 @@ async function seedStudents(): Promise<Record<string, Booking["studentId"]>> {
 
   const inserted = await db
     .insert(students)
-    .values(data.map(({ key, ...rest }) => rest))
+    .values(
+      data.map((student) => {
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars
+        const { key, ...rest } = student;
+        return rest;
+      }),
+    )
     .returning({ id: students.id, name: students.name });
 
   return inserted.reduce<Record<string, Booking["studentId"]>>((acc, studentRow, index) => {
@@ -133,10 +139,12 @@ async function main() {
     const studentIds = await seedStudents();
     await seedBookings(studentIds);
     console.log("Seed completed successfully.");
-    console.table(
-      Object.entries(studentIds).map(([key, id]) => ({ key, id })).slice(0, 4),
-    );
-    console.log("Seed completed successfully.");
+    const preview = Object.entries(studentIds)
+      .slice(0, 4)
+      .map(([label, id]) => ({ label, id }));
+    if (preview.length) {
+      console.table(preview);
+    }
     process.exit(0);
   } catch (error) {
     console.error("Seed failed", error);

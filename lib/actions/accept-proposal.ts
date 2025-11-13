@@ -9,12 +9,11 @@ export type AcceptState = {
   error?: string | null;
 };
 
-const INITIAL_STATE: AcceptState = { ok: false, error: null };
-
 export async function acceptProposalAction(
-  _prevState: AcceptState = INITIAL_STATE,
+  _prevState: AcceptState | undefined,
   formData: FormData,
 ): Promise<AcceptState> {
+  void _prevState;
   const proposalId = formData.get("proposalId");
   if (!proposalId || typeof proposalId !== "string") {
     return { ok: false, error: "Missing proposal id" };

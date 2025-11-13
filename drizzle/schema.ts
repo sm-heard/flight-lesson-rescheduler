@@ -132,7 +132,7 @@ export const weatherChecks = pgTable("weather_checks", {
     withTimezone: true,
     mode: "date",
   }).notNull(),
-  payload: jsonb("payload", { mode: "json" }).notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
   safe: boolean("safe").notNull(),
   reason: text("reason"),
 });
@@ -184,9 +184,9 @@ export const notifications = pgTable("notifications", {
     mode: "date",
   }),
   providerId: text("provider_id"),
-  payload: jsonb("payload", { mode: "json" }).notNull(),
+  payload: jsonb("payload").$type<Record<string, unknown>>().notNull(),
   status: notificationStatusEnum("status").default("queued").notNull(),
-  meta: jsonb("meta", { mode: "json" }).default({}).notNull(),
+  meta: jsonb("meta").$type<Record<string, unknown>>().default({}).notNull(),
   createdAt: timestamp("created_at", {
     withTimezone: true,
     mode: "date",
@@ -201,7 +201,7 @@ export const events = pgTable("events", {
   bookingId: uuid("booking_id").references(() => bookings.id, {
     onDelete: "set null",
   }),
-  details: jsonb("details", { mode: "json" }).default({}).notNull(),
+  details: jsonb("details").$type<Record<string, unknown>>().default({}).notNull(),
   createdAt: timestamp("created_at", {
     withTimezone: true,
     mode: "date",
